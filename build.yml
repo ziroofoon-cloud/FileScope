@@ -1,0 +1,47 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find project (works even if files are in a subfolder or still zipped)
+        id: find
+        run: |
+          if [ ! -f settings.gradle.kts ]; then
+            find . -maxdepth 3 -name '*.zip' -not -path './.git/*' -print0 | while IFS= read -r -d '' z; do
+              unzip -oq "$z" -d "unzipped_$(basename "$z" .zip)" || true
+            done
+          fi
+          S=$(find . -name settings.gradle.kts -not -path './.git/*' | head -n1)
+          if [ -z "$S" ]; then
+            echo "settings.gradle.kts not found. Repo contents:"
+            find . -not -path './.git/*' | head -60
+            exit 1
+          fi
+          echo "Project dir: $(dirname "$S")"
+          echo "dir=$(dirname "$S")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Build debug APK
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FileScope-APK
+          path: ${{ steps.find.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
